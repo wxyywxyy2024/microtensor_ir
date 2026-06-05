@@ -3,6 +3,7 @@ import torch
 from src.fx_frontend import import_torch_model
 from src.optimizer import LivenessAnalyzer
 from src.optimizer import StaticMemoryAllocator
+from src.codegen import LoopCodegen
 
 # 1. Define a native PyTorch block
 class TinyTransformerBlock(torch.nn.Module):
@@ -49,6 +50,15 @@ print("-" * 55)
 print(f"Native Allocation Total Size : {native_total_size} KB")
 print(f"Optimized Managed Pool Size  : {total_pool_size / 1024} KB")
 print(f"Hardware Memory Saved        : {native_total_size - (total_pool_size / 1024)} KB")
+
+print("\n--- [Step 4] Lowering Graph to Low-Level Fused C++ Code ---")
+generated_cpp = LoopCodegen.generate(compiler_graph, offsets, total_pool_size)
+
+output_filename = "src/kernel.cpp"
+with open(output_filename, "w") as f:
+    f.write(generated_cpp)
+
+print(f"Success! Native C++ loop-nested source code generated at: {output_filename}")
 
 
 
