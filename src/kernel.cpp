@@ -6,7 +6,7 @@
 uint8_t memory_pool[262144];
 
 // Fused Microtensr Inference Kernel
-void microtensor_kernel(const float* t1, const float* t2, const float* t3, float* output) {
+extern "C" __declspec(dllexport) void microtensor_kernel(const float* t1, const float* t2, const float* t3, float* output) {
 // Reconstructed buffer aliases from static memory plan
  float* t4 = reinterpret_cast<float*>(&memory_pool[0]);
  float* t5 = reinterpret_cast<float*>(&memory_pool[131072]);

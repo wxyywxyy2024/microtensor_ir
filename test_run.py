@@ -4,6 +4,7 @@ from src.fx_frontend import import_torch_model
 from src.optimizer import LivenessAnalyzer
 from src.optimizer import StaticMemoryAllocator
 from src.codegen import LoopCodegen
+from src.verify import compile_dll, verify_correctness
 
 # 1. Define a native PyTorch block
 class TinyTransformerBlock(torch.nn.Module):
@@ -59,6 +60,10 @@ with open(output_filename, "w") as f:
     f.write(generated_cpp)
 
 print(f"Success! Native C++ loop-nested source code generated at: {output_filename}")
+
+# 4. Compilation and linking automation passes
+dll_path = compile_dll()
+verify_correctness(dll_path)
 
 
 
