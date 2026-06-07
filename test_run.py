@@ -1,10 +1,12 @@
 # test_run.py
 import torch
+import os
 from src.fx_frontend import import_torch_model
 from src.optimizer import LivenessAnalyzer
 from src.optimizer import StaticMemoryAllocator
 from src.codegen import LoopCodegen
-from src.verify import compile_dll, verify_correctness
+from src.codegen import generate_llvm_ir
+from src.verify import compile_dll, compile_llvm_dll, verify_correctness
 
 # 1. Define a native PyTorch block
 class TinyTransformerBlock(torch.nn.Module):
@@ -62,8 +64,27 @@ with open(output_filename, "w") as f:
 print(f"Success! Native C++ loop-nested source code generated at: {output_filename}")
 
 # 4. Compilation and linking automation passes
-dll_path = compile_dll()
-verify_correctness(dll_path)
+cpp_dll = compile_dll()
+verify_correctness(cpp_dll, backend_name="C++")
+
+print("--- [Step 5] Lowering Graph to Low-Level Fused LLVM IR Code ---")
+# 1. Generate the raw LLVM IR assembly string (matching our evaluation size)
+# For our 1D elementwise confirmation, we'll pass a flat size matrix
+llvm_code_string = generate_llvm_ir(size=128*256)
+
+# 2. Establish the target output destination file paths
+ll_source_path = os.path.abspath("src/kernel.ll")
+
+# 3. Ensure the destination directory exists and write out the .ll file text
+os.makedirs("src", exist_ok=True)
+with open(ll_source_path, "w") as f:
+    f.write(llvm_code_string)
+print(f"Success! Native LLVM IR assembly generated at: {ll_source_path}")
+
+# 4. Compilation and linking automation passes
+llvm_dll = compile_llvm_dll()
+verify_correctness(llvm_dll, backend_name="LLVM IR")
+
 
 
 

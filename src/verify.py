@@ -13,7 +13,7 @@ def compile_dll():
 
     # Check for standard Mingw-w64 g++ compiler command
     cpp_source = os.path.abspath("src/kernel.cpp")
-    dll_output = os.path.abspath("src/microtensor_kernel.dll")
+    dll_output = os.path.abspath("src/microtensor_cpp_kernel.dll")
 
     # Absolute path for g++ exe. Use double backslashes '\\' so Windows paths don't break string parsing!
     compiler_path = "C:\\msys64\\ucrt64\\bin\\g++.exe"
@@ -43,8 +43,9 @@ def compile_dll():
     print(f"Successfully generated high-performance binary: {dll_output}")
     return dll_output
 
-def verify_correctness(dll_path):
-    print("\n--- [Step 4.2] Binding DLL and Verifying Mamthematical Correctness ---")
+def verify_correctness(dll_path, backend_name="C++"):
+    step_num = "4.2" if backend_name == "C++" else "5.2"
+    print(f"\n--- [Step {step_num}] Binding DLL and Verifying {backend_name} Mamthematical Correctness ---")
 
     # 1. Load the shared library using ctypes
     kernel_lib = ctypes.CDLL(os.path.abspath(dll_path))
@@ -60,14 +61,14 @@ def verify_correctness(dll_path):
     golden_output = torch.relu(torch.matmul(t1_pt, t2_pt) + t3_pt)
 
     # 4. Prepare empty numpy destination buffer for our custom C++ kernel
-    cpp_output_np = np.zeros((128, 256), dtype=np.float32)
+    compiled_output_np = np.zeros((128, 256), dtype=np.float32)
 
     # 5. Extract raw data memory pointers to pass through the ctypes FFI barrier
     t1_ptr = t1_pt.contiguous().data_ptr()
     t2_ptr = t2_pt.contiguous().data_ptr()
     t3_ptr = t3_pt.contiguous().data_ptr()
 
-    out_ptr = cpp_output_np.ctypes.data
+    out_ptr = compiled_output_np.ctypes.data
 
     # 6. Call our fused microtensor kernel natively on the hardware
     # signature: void microtensor_kernel(const float* t1, const float* t2, const float* t3, float* output)
@@ -79,12 +80,52 @@ def verify_correctness(dll_path):
     )
 
     # 7. Assert precision math up to standard float32 tolerance margins
-    cpp_output_pt = torch.from_numpy(cpp_output_np)
-    is_correct = torch.allclose(golden_output, cpp_output_pt, rtol=1e-4, atol=1e-4)
+    compiled_output_pt = torch.from_numpy(compiled_output_np)
+    is_correct = torch.allclose(golden_output, compiled_output_pt, rtol=1e-4, atol=1e-4)
 
     if is_correct:
         print(" SUCCESS: Custom compiled kernel output matches PyTorch perfectly!")
-        max_diff = torch.max(torch.abs(golden_output - cpp_output_pt)).item()
+        max_diff = torch.max(torch.abs(golden_output - compiled_output_pt)).item()
         print(f"Maximum absolute numerical drift: {max_diff:.6e}")
     else:
         print(" ERROR: Numerical mismatch detected between compiled kernel and PyTorch reference.")
+
+def compile_llvm_dll():
+    print("--- [Step 5.1] Compiling LLVM IR Kernel to Native Windows DLL ---")
+
+    # Force ensure that the 'src' directory physically exists
+    os.makedirs("src", exist_ok=True)
+
+    # Resolve absolute paths for the source text and target binary
+    llvm_source = os.path.abspath("src/kernel.ll")
+    dll_output = os.path.abspath("src/microtensor_llvm_kernel.dll")
+
+    # Absolute path to Clange executable within MSYS2 UCRT64 toolchain
+    compiler_path = "C:\\msys64\\ucrt64\\bin\\clang.exe"
+
+    # If manual compilation already built it, just use it!
+    if os.path.exists(dll_output):
+        print(f" Found manually compiled binary at: {dll_output}")
+        print(" Bypassing background subprocess compilation layer.")
+        return dll_output
+
+    # Compilation flags optimized for performance (-O3)
+    # Binds statically to standard libraries to prevent runtime FileNotFoundError dependencies.
+    compile_cmd = f'"{compiler_path}" -O3 -shared -static -static-libgcc "{llvm_source}" -o "{dll_output}"'
+
+    print(f"Executing: {compile_cmd}")
+
+    #Run using subprocess with shell=True to match your C++ wrapper mechanics
+    result = subprocess.run(compile_cmd, capture_output=True, text=True, shell=True)
+
+    if result.returncode != 0:
+        error_details = []
+        if result.stderr: error_details.append(f"Stderr: {result.stderr.strip()}")
+        if result.stdout: error_details.append(f"Stdout: {result.stdout.strip()}")
+        if not error_details: error_details.append(f"OS Process existed with silent failure code: {result.returncode}")
+
+        raise RuntimeError("LLVM IR Compilation Failed!\n" + "\n".join(error_details))
+
+
+    print(f"Successully generated high-performance binary: {dll_output}")
+    return dll_output
